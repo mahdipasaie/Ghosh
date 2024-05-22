@@ -73,7 +73,7 @@ def refine_to_min(mesh_coarse, list_coordinate_points_interface):
 
 
 
-def refine_mesh(coarse_mesh, solution_vector_pf, spaces_pf, max_level, comm, precentile_threshold_of_high_gradient_U=90 ):
+def refine_mesh(coarse_mesh, solution_vector_pf, spaces_pf, max_level, comm, precentile_threshold_of_high_gradient_U=100 ):
     """Refines the mesh based on provided parameters and updates related variables and solvers."""
 
 
@@ -108,12 +108,16 @@ def refine_mesh(coarse_mesh, solution_vector_pf, spaces_pf, max_level, comm, pre
         'dx_max': df.MPI.max(comm, mesh_new.hmax()) / df.sqrt(2),
     }
 
+    # find max of Y: 
+    y_coordinates = list_coordinate_points_interface[:, 1]
+    max_y = np.max(y_coordinates)
 
 
 
 
 
-    return mesh_new, mesh_info
+
+    return mesh_new, mesh_info, max_y
 
 
 def high_gradient_u_points(precentile_threshold_of_high_gradient_U, spaces_pf, solution_vector_pf, comm):

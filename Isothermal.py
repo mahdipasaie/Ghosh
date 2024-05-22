@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import time
 from modadisoterm import refine_mesh
 from tqdm import tqdm
+import random
+
 
 
 set_log_level(LogLevel.ERROR)
@@ -60,40 +62,45 @@ size = MPI.size(comm)
 T = 0
 
 parameters = {
-    'dt': 0.13,
-    "dy": 0.8,     
+    'dt': 0.13,#0.13
+    "dy": 0.8,#0.8     
     "Nx_aprox": 500,
     "Ny_aprox": 4000,
-    "max_level": 6, # Maximum level of Coarsening
-    "y_solid": 5,
+    "max_level": 5, # Maximum level of Coarsening
+    "y_solid": 20,
     'w0': 1,
     "W_scale": 1E-8,#m
     "Tau_scale":  2.30808E-8,#seconds 
     'Tau_0': 1,
     "G": 1E7 , # k/m # it should be non-dimensionlized or y should be in meter in equation
     "V": 3E-2 , # m/s # do not scale the time cause the time is scaled in eqution 
-    "m_l": -10.5, # K%-1
+    "m_l": 10.5,#-10.5, # K%-1 #negative sign is important?!
     "c_0": 5,# %
     'at': lambda: 1 / (2 * fe.sqrt(2.0)),
     'ep_4': 0.03,
     'k_eq': 0.48,
     'lamda': 1.377,  #1.104875
-    "omega" : 0.55,
     'opk': lambda k_eq: 1 + k_eq,
     'omk': lambda k_eq: 1 - k_eq,
     'a1': 0.8839,
     'a2': 0.6267,
-    'd': lambda a2, lamda: a2 * lamda,
+    'd_l': 0.6267* 1.377 ,
+    "d_s":2.877E-4 ,
     'd0':8E-9,#meter
-    "abs_tol": 1E-5, #1e-6
-    "rel_tol": 1E-4, #1e-5
+    "abs_tol": 1E-4, #1e-6
+    "rel_tol": 1E-3, #1e-5
+    #####################################
+    'nonlinear_solver_pf': 'newton',     # "newton" , 'snes'
+    'linear_solver_pf': 'mumps',       # "mumps" , "superlu_dist", 'cg', 'gmres', 'bicgstab'
+    "preconditioner_pf": 'ilu',       # 'hypre_amg', 'ilu', 'jacobi'
+    'maximum_iterations_pf': 50,
 }
 
 # To access and compute values with dependencies, call the lambda functions with necessary arguments
 parameters['at'] = parameters['at']()  # No dependencies
 parameters['opk'] = parameters['opk'](parameters['k_eq'])
 parameters['omk'] = parameters['omk'](parameters['k_eq'])
-parameters['d'] = parameters['d'](parameters['a2'], parameters['lamda'])
+# parameters['d'] = parameters['d'](parameters['a2'], parameters['lamda'])
 
 
 # Retrieve parameters individually from the dictionary
@@ -107,7 +114,6 @@ opk = parameters['opk']
 omk = parameters['omk']
 a1 = parameters['a1']
 a2 = parameters['a2']
-d = parameters['d']  # Assuming 'd' is calculated as a2 * lamda
 d0 = parameters['d0']  # Assuming 'd0' is calculated as a1 / lamda
 rel_tol = parameters['rel_tol']
 abs_tol = parameters['abs_tol']
@@ -116,7 +122,7 @@ Nx_aprox = parameters['Nx_aprox']
 Ny_aprox = parameters['Ny_aprox']
 dy = parameters['dy']
 max_level = parameters['max_level']
-y_solid = parameters['y_solid']
+y_solid = parameters['y_solid'] 
 
 #############################  END  ################################
 
@@ -154,7 +160,7 @@ coarse_mesh = fe.RectangleMesh( Point(0, 0), Point(Nx, Ny), nx, ny)
 coarse_mesh_init = fe.RectangleMesh( Point(0, 0), Point(Nx, Ny), nx_init, ny_init)
 
 
-mesh = refine_mesh_local( coarse_mesh_init , y_solid , 4  )
+mesh = refine_mesh_local( coarse_mesh_init , y_solid + 10*dy , 4  )
 
 # Printing Initial Mesh Informations 
 
@@ -184,21 +190,18 @@ class InitialConditions(UserExpression):
         global omega,dy,y_solid
         xp = x[0]
         yp = x[1]
+        # # Sinusoidal perturbation with an amplitude of 5 * dy
+        perturbation_amplitude = 1 * dy
+        # perturbation_wavelength = 100*dy  # Wavelength remains as dy
+        # perturbation =   perturbation_amplitude * np.sin(2 * np.pi * xp / perturbation_wavelength)
 
-        if yp < y_solid-dy:#solid
+        if yp < y_solid - perturbation_amplitude :  # solid
             values[0] = 1
             values[1] = -1
-        elif y_solid-dy<yp<y_solid+dy:# interface
-            # Small amplitude perturbation near the solid-liquid interface
-            perturbation_amplitude = 0.01  # Adjust amplitude as needed
-            perturbation_wavelength = dy  # Adjust wavelength as needed
-            perturbation = perturbation_amplitude * np.sin(2 * np.pi * xp / perturbation_wavelength)
-
-
-            values[0] = 1 + perturbation
+        elif y_solid - perturbation_amplitude  <= yp <= y_solid + perturbation_amplitude:  # interface with perturbation
+            values[0] = random.uniform(-1, 1)
             values[1] = -1
-        else:#liquid
-
+        else:  # liquid
             values[0] = -1
             values[1] = -1
 
@@ -219,6 +222,8 @@ def Initial_Interpolate(Phi_U, Phi_U_0):
 
 
 #################### Define Variables  ################################
+
+
 
 
 def define_variables(mesh):
@@ -315,9 +320,7 @@ def calculate_equation_1(variables_dict, dep_var_dict, parameters, mesh):
     w0 = parameters['w0']
     k_eq = parameters['k_eq']
     lamda = parameters['lamda']
-    d = parameters['d'] 
     dt = parameters['dt']
-    omega = parameters["omega"]
     # Retrieve the values from the dictionary
     phi_answer = variables_dict['Phi_answer']
     u_answer = variables_dict['U_answer']
@@ -335,6 +338,7 @@ def calculate_equation_1(variables_dict, dep_var_dict, parameters, mesh):
     m_l = parameters['m_l']
     c_0 = parameters['c_0']
 
+
     # Access the spatial coordinates
     X = fe.SpatialCoordinate(mesh)
     Y = X[1]
@@ -349,27 +353,13 @@ def calculate_equation_1(variables_dict, dep_var_dict, parameters, mesh):
 
     term2 = (
         fe.inner(
-            (phi_answer - phi_answer**3) - lamda * (u_answer  + G* W_scale* ( Y - V* (T*Tau_scale) )/ (m_l* c_0/k_eq)  ) * (1 - phi_answer**2) ** 2,
+            (phi_answer - phi_answer**3) - lamda * (u_answer  + (G* W_scale)* ( Y - V* (T*Tau_scale/W_scale) )/ (m_l* c_0/k_eq * (1-k_eq))  ) * (1 - phi_answer**2) ** 2,
             v_test,
         ) * fe.dx
     )
 
-    #     term2 = (
-    #     fe.inner(
-    #         (phi_answer - phi_answer**3) - lamda * (u_answer * m_c_inf + theta_answer_constant) * (1 - phi_answer**2) ** 2,
-    #         v_test,
-    #     ) * fe.dx
-    # )
-
-
-    # u_for_tau = omega / ( 1 - omk * omega )
-
-    # tau_n = (w_n / w0) ** 2 * (m_c_inf * (1 + (1 - k_eq) * u_for_tau))
 
     tau_n = (w_n / w0) ** 2 
-
-    # tau_n = (w_n / w0) ** 2 * ( m_c_inf * (1 + (1 - k_eq) * u_answer))
-    # tau_n = (w_n / w0) ** 2 
 
     term1 = - fe.inner((tau_n) * (phi_answer - phi_prev) / dt, v_test) * fe.dx
 
@@ -384,7 +374,6 @@ def calculate_equation_2(variables_dict, dep_var_dict , parameters):
     at = parameters['at']
     opk = parameters['opk']
     omk = parameters['omk']
-    d = parameters['d']  
     dt = parameters['dt']
     # Retrieve the values from the dictionary
     phi_answer = variables_dict['Phi_answer']
@@ -394,6 +383,10 @@ def calculate_equation_2(variables_dict, dep_var_dict , parameters):
     q_test = variables_dict['test_2']
 
     w_n = dep_var_dict['W_n']
+    d_s = parameters['d_s']
+    d_l = parameters['d_l']
+
+    d = d_s* ( 1+phi_answer ) / 2 + d_l * ( 1-phi_answer ) / 2
 
 
 
@@ -427,7 +420,6 @@ def define_boundary_condition(variables_dict, physical_parameters_dict) :
 
 
 
-    omega = physical_parameters_dict["omega"]
     Nx = physical_parameters_dict['Nx']
     Ny = physical_parameters_dict['Ny']
     W = variables_dict['function_space']
@@ -448,8 +440,8 @@ def define_boundary_condition(variables_dict, physical_parameters_dict) :
 
     # bc_u_right = fe.DirichletBC(W.sub(1), fe.Constant(- omega), right_boundary)
     # bc_u_top = fe.DirichletBC(W.sub(1), fe.Constant(- omega), top_boundary)
-    bc_u_right = fe.DirichletBC(W.sub(1), fe.Constant(0), right_boundary)
-    bc_u_top = fe.DirichletBC(W.sub(1), fe.Constant(0), top_boundary)
+    bc_u_right = fe.DirichletBC(W.sub(1), fe.Constant(-1), right_boundary)
+    bc_u_top = fe.DirichletBC(W.sub(1), fe.Constant(-1), top_boundary)
 
     Bc = [bc_u_top, bc_u_right ]
     
@@ -461,22 +453,38 @@ def define_problem(eq1, eq2, Bc, phi_u, parameters):
     
     rel_tol = parameters['rel_tol']
     abs_tol = parameters['abs_tol']
+    linear_solver_pf = parameters['linear_solver_pf']
+    nonlinear_solver_pf = parameters['nonlinear_solver_pf']
+    preconditioner_pf = parameters['preconditioner_pf']
+    maximum_iterations_pf = parameters['maximum_iterations_pf']
+
 
 
     L = eq1 + eq2  # Define the Lagrangian
     J = derivative(L, phi_u)  # Compute the Jacobian
 
     # Define the problem
-    problem = NonlinearVariationalProblem(L, phi_u, Bc, J=J)
+    problem = NonlinearVariationalProblem(L, phi_u, J=J) # BC = None
 
-    # Create and configure the solver
-    solver = NonlinearVariationalSolver(problem)
-    prm = solver.parameters
-    prm["newton_solver"]["relative_tolerance"] = rel_tol
-    prm["newton_solver"]["absolute_tolerance"] = abs_tol
-    # prm["newton_solver"]["krylov_solver"]["nonzero_initial_guess"] = nonzero_initial_guess
+    solver_pf = fe.NonlinearVariationalSolver(problem)
 
-    return solver
+    solver_parameters = {
+        'nonlinear_solver': nonlinear_solver_pf,
+        'snes_solver': {
+            'linear_solver': linear_solver_pf,
+            'report': False,
+            "preconditioner": preconditioner_pf,
+            'error_on_nonconvergence': False,
+            'absolute_tolerance': abs_tol,
+            'relative_tolerance': rel_tol,
+            'maximum_iterations': maximum_iterations_pf,
+        }
+    }
+
+
+    solver_pf.parameters.update(solver_parameters)
+
+    return solver_pf
 
 
 
@@ -534,7 +542,7 @@ solver, solution_vector, solution_vector_0, spaces, Bc = update_solver_on_new_me
 ############################ File Section #########################
 
 
-file = fe.XDMFFile("Isothermal.xdmf" ) # File Name To Save #
+file = fe.XDMFFile("Ghosh_4.xdmf" ) # File Name To Save #
 
 
 def write_simulation_data(Sol_Func, time, file, variable_names ):
@@ -576,7 +584,7 @@ write_simulation_data( solution_vector_0, T, file , variable_names=variable_name
 ############ Initialize for Adaptive Mesh #########################
 
 
-
+max_y = 0
 
 for it in tqdm(range(0, 1000000000)):
 
@@ -588,19 +596,23 @@ for it in tqdm(range(0, 1000000000)):
 
 
     # Refining mesh
-    if it == 20 or it % 100 == 25 :
+    if it % 10 == 0 and it> 10 :
 
         start = time.perf_counter()
-        mesh_new, mesh_info = refine_mesh(coarse_mesh, solution_vector_0, spaces, max_level, comm )
+        mesh_new, mesh_info, max_y = refine_mesh(coarse_mesh, solution_vector_0, spaces, max_level, comm )
         # Update the solver and solution on the new mesh
         solver, solution_vector, solution_vector_0, spaces, Bc = update_solver_on_new_mesh(mesh_new, parameters, solution_vector, solution_vector_0)
         end = time.perf_counter()
         Time_Lentgh_of_refinment = end - start
 
+    if it % 10 == 0 and rank == 0:
+        print("")
+        print(f"Max Y: {max_y}", flush=True)
 
-    if it % 100 == 0 :
+    if  it % 10 == 0 :
 
         write_simulation_data( solution_vector_0,  T , file , variable_names )
+        
 
 
     # print information of simulation
