@@ -39,9 +39,17 @@ def Coordinates_Of_Int(solution_vector_pf, spaces_pf, comm):
     """Get the small mesh and return coordinates of the interface."""
     dof_Val, dof_Coor = Value_Coor_dof(solution_vector_pf, spaces_pf, comm)
     Index_list = np.concatenate(np.argwhere(dof_Val > 0.00001))
-    Coord_L_Of_Int = dof_Coor[Index_list]
+    list_coordinate_points_interface = dof_Coor[Index_list]
 
-    return Coord_L_Of_Int
+    # Find the minimum value of the y-coordinates
+    y_coordinates = list_coordinate_points_interface[:, 1]
+    # min_y = np.min(y_coordinates)
+    max_y = np.max(y_coordinates)
+    min_yr = max_y - 100  # window of refinement is 20
+    # Filter out points where the y-coordinate is less than the minimum y value
+    list_coordinate_points_interface = list_coordinate_points_interface[y_coordinates > min_yr]
+
+    return list_coordinate_points_interface
 
 
 def mark_coarse_mesh(mesh_coarse, list_coordinate_points_interface):
@@ -80,6 +88,7 @@ def refine_mesh(coarse_mesh, solution_vector_pf, spaces_pf, max_level, comm, pre
     coarse_mesh_it = coarse_mesh
     # Get the coordinates of the interface
     list_coordinate_points_interface = Coordinates_Of_Int(solution_vector_pf, spaces_pf, comm)
+
     high_gradient_U_points = high_gradient_u_points(precentile_threshold_of_high_gradient_U, spaces_pf, solution_vector_pf, comm)
 
 

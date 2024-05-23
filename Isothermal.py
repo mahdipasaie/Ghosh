@@ -191,15 +191,15 @@ class InitialConditions(UserExpression):
         xp = x[0]
         yp = x[1]
         # # Sinusoidal perturbation with an amplitude of 5 * dy
-        perturbation_amplitude = 1 * dy
-        # perturbation_wavelength = 100*dy  # Wavelength remains as dy
-        # perturbation =   perturbation_amplitude * np.sin(2 * np.pi * xp / perturbation_wavelength)
+        perturbation_amplitude = 1*dy
+        perturbation_wavelength = 2*dy  # Wavelength remains as dy
+        perturbation =   perturbation_amplitude * np.sin(2 * np.pi * xp / perturbation_wavelength)
 
         if yp < y_solid - perturbation_amplitude :  # solid
             values[0] = 1
             values[1] = -1
         elif y_solid - perturbation_amplitude  <= yp <= y_solid + perturbation_amplitude:  # interface with perturbation
-            values[0] = random.uniform(-1, 1)
+            values[0] = perturbation #random.uniform(-1, 1)
             values[1] = -1
         else:  # liquid
             values[0] = -1
@@ -542,7 +542,7 @@ solver, solution_vector, solution_vector_0, spaces, Bc = update_solver_on_new_me
 ############################ File Section #########################
 
 
-file = fe.XDMFFile("Ghosh_4.xdmf" ) # File Name To Save #
+file = fe.XDMFFile("Ghosh_7.xdmf" ) # File Name To Save #
 
 
 def write_simulation_data(Sol_Func, time, file, variable_names ):
