@@ -41,13 +41,13 @@ def Coordinates_Of_Int(solution_vector_pf, spaces_pf, comm):
     Index_list = np.concatenate(np.argwhere(dof_Val > 0.00001))
     list_coordinate_points_interface = dof_Coor[Index_list]
 
-    # Find the minimum value of the y-coordinates
-    y_coordinates = list_coordinate_points_interface[:, 1]
-    # min_y = np.min(y_coordinates)
-    max_y = np.max(y_coordinates)
-    min_yr = max_y - 100  # window of refinement is 20
-    # Filter out points where the y-coordinate is less than the minimum y value
-    list_coordinate_points_interface = list_coordinate_points_interface[y_coordinates > min_yr]
+    # # Find the minimum value of the y-coordinates
+    # y_coordinates = list_coordinate_points_interface[:, 1]
+    # # min_y = np.min(y_coordinates)
+    # max_y = np.max(y_coordinates)
+    # min_yr = max_y - 100  # window of refinement is 20
+    # # Filter out points where the y-coordinate is less than the minimum y value
+    # list_coordinate_points_interface = list_coordinate_points_interface[y_coordinates > min_yr]
 
     return list_coordinate_points_interface
 
@@ -81,7 +81,7 @@ def refine_to_min(mesh_coarse, list_coordinate_points_interface):
 
 
 
-def refine_mesh(coarse_mesh, solution_vector_pf, spaces_pf, max_level, comm, precentile_threshold_of_high_gradient_U=100 ):
+def refine_mesh(coarse_mesh, solution_vector_pf, spaces_pf, max_level, comm, precentile_threshold_of_high_gradient_U=95 ):
     """Refines the mesh based on provided parameters and updates related variables and solvers."""
 
 

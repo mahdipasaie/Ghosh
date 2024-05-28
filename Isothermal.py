@@ -13,11 +13,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from modadisoterm import refine_mesh
-from tqdm import tqdm
 import random
 
 
-
+# calculate C in paraview: ( (1-0.48)*U + 1 )/(2*0.48) * ( ( 1+ 0.48) - ( 1 -0.48)* Phi  ) * 5
 set_log_level(LogLevel.ERROR)
 
 #################### Define Function For Lcocal Refine #################
@@ -73,7 +72,7 @@ parameters = {
     "Tau_scale":  2.30808E-8,#seconds 
     'Tau_0': 1,
     "G": 1E7 , # k/m # it should be non-dimensionlized or y should be in meter in equation
-    "V": 3E-2 , # m/s # do not scale the time cause the time is scaled in eqution 
+    "V": 1E-1 , # m/s # do not scale the time cause the time is scaled in eqution 
     "m_l": 10.5,#-10.5, # K%-1 #negative sign is important?!
     "c_0": 5,# %
     'at': lambda: 1 / (2 * fe.sqrt(2.0)),
@@ -87,13 +86,13 @@ parameters = {
     'd_l': 0.6267* 1.377 ,
     "d_s":2.877E-4 ,
     'd0':8E-9,#meter
-    "abs_tol": 1E-4, #1e-6
-    "rel_tol": 1E-3, #1e-5
+    "abs_tol": 1E-6, #1e-6
+    "rel_tol": 1E-5, #1e-5
     #####################################
-    'nonlinear_solver_pf': 'newton',     # "newton" , 'snes'
-    'linear_solver_pf': 'mumps',       # "mumps" , "superlu_dist", 'cg', 'gmres', 'bicgstab'
-    "preconditioner_pf": 'ilu',       # 'hypre_amg', 'ilu', 'jacobi'
-    'maximum_iterations_pf': 50,
+    'nonlinear_solver_pf': 'snes',     # "newton" , 'snes'
+    'linear_solver_pf': 'gmres',       # "mumps" , "superlu_dist", 'cg', 'gmres', 'bicgstab'
+    "preconditioner_pf": 'hypre_amg',       # 'hypre_amg', 'ilu', 'jacobi'
+    'maximum_iterations_pf': 100,
 }
 
 # To access and compute values with dependencies, call the lambda functions with necessary arguments
@@ -192,7 +191,7 @@ class InitialConditions(UserExpression):
         yp = x[1]
         # # Sinusoidal perturbation with an amplitude of 5 * dy
         perturbation_amplitude = 1*dy
-        perturbation_wavelength = 2*dy  # Wavelength remains as dy
+        perturbation_wavelength = 4*dy  # Wavelength remains as dy
         perturbation =   perturbation_amplitude * np.sin(2 * np.pi * xp / perturbation_wavelength)
 
         if yp < y_solid - perturbation_amplitude :  # solid
@@ -406,11 +405,13 @@ def calculate_equation_2(variables_dict, dep_var_dict , parameters):
     term6 = -fe.inner(((opk) / 2 - (omk) * phi_answer / 2) * (u_answer - u_prev) / dt, q_test) * fe.dx
     term7 = -fe.inner(d * (1 - phi_answer) / 2 * fe.grad(u_answer), fe.grad(q_test)) * fe.dx
 
-    term8 = -(1 * at) * (1 + (omk) * u_answer) * dphidt * fe.inner(norm, fe.grad(q_test)) * fe.dx
+    # term8 = -(1 * at) * (1 + (omk) * u_answer) * dphidt * fe.inner(norm, fe.grad(q_test)) * fe.dx
     # term8 = -(w_n * at) * (1 + (omk) * u_answer) * dphidt * fe.inner(norm, fe.grad(q_test)) * fe.dx
     term9 = (1 + (omk) * u_answer) * dphidt / 2 * q_test * fe.dx
 
-    eq2 = term6 + term7 + term8 + term9
+    # eq2 = term6 + term7 + term8 + term9
+    eq2 = term6 + term7  + term9 # without anti-trapping term
+
 
 
     return eq2
@@ -542,7 +543,7 @@ solver, solution_vector, solution_vector_0, spaces, Bc = update_solver_on_new_me
 ############################ File Section #########################
 
 
-file = fe.XDMFFile("Ghosh_7.xdmf" ) # File Name To Save #
+file = fe.XDMFFile("Ghosh_changed_parameters_solver.xdmf" ) # File Name To Save #
 
 
 def write_simulation_data(Sol_Func, time, file, variable_names ):
@@ -586,17 +587,17 @@ write_simulation_data( solution_vector_0, T, file , variable_names=variable_name
 
 max_y = 0
 
-for it in tqdm(range(0, 1000000000)):
+for it in range(0, 1000000000):
+
 
     T = T + dt
 
     solver.solve()
-
     solution_vector_0.vector()[:] = solution_vector.vector()  # update the solution
 
 
     # Refining mesh
-    if it % 10 == 0 and it> 10 :
+    if it % 20 == 0 and it> 10 :
 
         start = time.perf_counter()
         mesh_new, mesh_info, max_y = refine_mesh(coarse_mesh, solution_vector_0, spaces, max_level, comm )
@@ -605,18 +606,15 @@ for it in tqdm(range(0, 1000000000)):
         end = time.perf_counter()
         Time_Lentgh_of_refinment = end - start
 
-    if it % 10 == 0 and rank == 0:
-        print("")
-        print(f"Max Y: {max_y}", flush=True)
 
-    if  it % 10 == 0 :
 
+    if  it % 100 == 0 :
         write_simulation_data( solution_vector_0,  T , file , variable_names )
         
 
 
     # print information of simulation
-    if it % 1000 == 500 :
+    if it % 1000 == 500 and rank == 0:
         n_cells = mesh_info["n_cells"]
         dx_min = mesh_info["dx_min"]
         dx_max = mesh_info["dx_max"]
@@ -635,9 +633,59 @@ for it in tqdm(range(0, 1000000000)):
         )
 
         print(simulation_status_message, flush=True)
+        print(f"Max Y: {max_y}", flush=True)
 
         
 
 
 
 #############################  END  ###############################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#####
+# paraview color map:
+# from paraview.simple import *
+
+# # Get the active view
+# renderView = GetActiveViewOrCreate('RenderView')
+
+# # Get the active source
+# data = GetActiveSource()
+
+# # Get the color transfer function for your data array
+# colorArrayName = 'Result'
+# colorTransferFunction = GetColorTransferFunction(colorArrayName)
+
+# # Access the underlying vtkColorTransferFunction object
+# vtkColorTransferFunction = colorTransferFunction.GetClientSideObject()
+
+# # Clear existing control points
+# vtkColorTransferFunction.RemoveAllPoints()
+
+# # Define custom control points
+# controlPoints = [
+#     (2.0, 0.0, 0.0, 1.0),  # Blue at 2.0
+#     (8.0, 0.0, 1.0, 0.0),  # Green at 8.0
+#     (15.0, 0.5, 0.0, 0.0), # Darker Red at 15.0
+#     (16.0, 1.0, 0.0, 0.0)  # Red at 16.0
+# ]
+
+# # Add custom control points
+# for point in controlPoints:
+#     vtkColorTransferFunction.AddRGBPoint(point[0], point[1], point[2], point[3])
+
+# # Update the view to reflect changes
+# Render()
